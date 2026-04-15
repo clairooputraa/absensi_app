@@ -1,0 +1,17 @@
+{
+  "project": "absensi_app",
+  "platform": "ios",
+  "github": {
+    "owner": "clairooputraa",
+    "repo": "absensi_app"
+  },
+  "ios": {
+    "path": "ios"
+  },
+  "flutter": {
+    "version": "3.41.6",
+    "watch": {}
+  },
+  "reactNative": {},
+  "mobai": {}
+}
