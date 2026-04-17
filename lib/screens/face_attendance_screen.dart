@@ -6,6 +6,7 @@ import '../providers/theme_provider.dart';
 import '../providers/attendance_provider.dart';
 import '../providers/user_provider.dart';
 import '../services/face_recognition_service.dart';
+import '../helpers/sound_helper.dart';
 import 'dart:io';
 import 'dart:async';
 
@@ -28,7 +29,8 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
   List<CameraDescription>? _cameras;
   bool _isCameraReady = false;
   bool _isProcessing = false;
-  String _status = 'Posisikan wajah Anda di depan kamera';
+  bool _isSuccess = false;
+  String _status = '📷 Hadapkan wajah ke kamera';
   File? _capturedImage;
   final FaceRecognitionService _faceService = FaceRecognitionService();
   bool _hasRegisteredFace = false;
@@ -37,11 +39,44 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
   Timer? _detectionTimer;
   bool _isFaceDetected = false;
 
+  // 🔥 Untuk tripod mode (absen cepat)
+  DateTime? _lastAttendanceTime;
+  static const Duration _cooldown = Duration(seconds: 3);
+
+  // 🔥 UNTUK RECENT ATTENDANCE LIST
+  Timer? _recentListTimer;
+  List<Map<String, dynamic>> _recentAttendance = [];
+
   @override
   void initState() {
     super.initState();
     _initCamera();
     _checkRegisteredFace();
+    _loadRecentAttendance();
+
+    // 🔥 TIMER UNTUK UPDATE RECENT LIST SETIAP 2 DETIK
+    _recentListTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (_isCameraReady) {
+        _loadRecentAttendance();
+      }
+    });
+  }
+
+  // 🔥 LOAD RECENT ATTENDANCE
+  Future<void> _loadRecentAttendance() async {
+    try {
+      final attendanceProvider =
+          Provider.of<AttendanceProvider>(context, listen: false);
+      final response = await attendanceProvider.getAttendanceHistory(limit: 10);
+
+      if (mounted) {
+        setState(() {
+          _recentAttendance = response;
+        });
+      }
+    } catch (e) {
+      print('Error loading recent: $e');
+    }
   }
 
   Future<void> _checkRegisteredFace() async {
@@ -52,7 +87,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
       _hasRegisteredFace = faceFile != null;
       if (!_hasRegisteredFace) {
         _status =
-            'Anda belum mendaftarkan wajah. Silakan registrasi terlebih dahulu.';
+            '⚠️ Anda belum mendaftarkan wajah. Silakan registrasi terlebih dahulu.';
       }
     });
   }
@@ -67,7 +102,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
 
       _cameraController = CameraController(
         frontCamera,
-        ResolutionPreset.medium,
+        ResolutionPreset.low,
         enableAudio: false,
       );
       await _cameraController!.initialize();
@@ -76,31 +111,29 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
         _isCameraReady = true;
       });
 
-      // 🔥 LANGSUNG MULAI DETEKSI WAJAH (tanpa syarat)
-      _startFaceDetection();
+      _startFastFaceDetection();
     }
   }
 
-  // 🔥 START FACE DETECTION REALTIME
-  void _startFaceDetection() {
-    _detectionTimer =
-        Timer.periodic(const Duration(milliseconds: 200), (timer) {
-      if (_isCameraReady && !_isProcessing) {
-        _detectFaceRealtime();
+  void _startFastFaceDetection() {
+    _detectionTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (_isCameraReady && !_isProcessing && !_isSuccess) {
+        _fastDetectAndAbsen();
       }
     });
   }
 
-  // 🔥 DETEKSI WAJAH REALTIME (DIPERBAIKI dengan kurung kurawal)
-  Future<void> _detectFaceRealtime() async {
+  Future<void> _fastDetectAndAbsen() async {
+    if (_isProcessing) return;
+    _isProcessing = true;
+
     try {
-      // 🔥 PERBAIKAN: Tambahkan kurung kurawal {}
       if (_cameraController == null ||
           !_cameraController!.value.isInitialized) {
+        _isProcessing = false;
         return;
       }
 
-      // Ambil frame dari kamera
       final XFile picture = await _cameraController!.takePicture();
       final File imageFile = File(picture.path);
 
@@ -111,26 +144,44 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
           _isFaceDetected = result.success && result.faceCount == 1;
 
           if (_isFaceDetected) {
-            _status = '🎯 Wajah terdeteksi!';
-          } else {
-            _status = '📷 Arahkan wajah ke dalam kotak';
+            _status = '🎯 Wajah terdeteksi! Memproses...';
           }
         });
 
-        // 🔥 AUTO ABSEN (hanya jika sudah registrasi dan wajah terdeteksi)
         if (widget.autoCapture &&
             _isFaceDetected &&
-            !_isProcessing &&
+            !_isSuccess &&
             _hasRegisteredFace) {
+          if (_lastAttendanceTime != null &&
+              DateTime.now().difference(_lastAttendanceTime!) < _cooldown) {
+            _status = '⏳ Tunggu sebentar...';
+            _isProcessing = false;
+            return;
+          }
+
+          _isSuccess = true;
           _detectionTimer?.cancel();
+
           await _takeAttendance(imageFile);
+
+          _lastAttendanceTime = DateTime.now();
+
+          await Future.delayed(const Duration(seconds: 2));
+          if (mounted) {
+            setState(() {
+              _isSuccess = false;
+              _isFaceDetected = false;
+              _status = '📷 Siap untuk siswa berikutnya';
+            });
+            _startFastFaceDetection();
+          }
         }
       }
 
-      // Hapus file temporary
       await imageFile.delete();
+      _isProcessing = false;
     } catch (e) {
-      // Jangan print error setiap frame
+      _isProcessing = false;
     }
   }
 
@@ -139,7 +190,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
 
     setState(() {
       _isProcessing = true;
-      _status = 'Mengambil foto wajah...';
+      _status = '📸 Mengambil foto wajah...';
     });
 
     try {
@@ -149,7 +200,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
       final result = await _faceService.detectFace(imageFile);
 
       if (result.success && result.faceCount == 1) {
-        _status = 'Wajah terdeteksi, menyimpan data...';
+        _status = '💾 Wajah terdeteksi, menyimpan data...';
 
         final userProvider = Provider.of<UserProvider>(context, listen: false);
         final savedPath = await _faceService.saveFaceEmbedding(
@@ -161,6 +212,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
             _status = '✅ Registrasi wajah berhasil!';
             _capturedImage = imageFile;
           });
+          await SoundHelper.playSuccess();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
                 content: Text('Registrasi wajah berhasil!'),
@@ -168,12 +220,15 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
           );
         } else {
           _status = '❌ Gagal menyimpan data wajah';
+          await SoundHelper.playError();
         }
       } else if (result.success && result.faceCount > 1) {
         _status =
-            '❌ Terdeteksi ${result.faceCount} wajah. Hanya satu wajah yang diperbolehkan.';
+            '❌ Terdeteksi ${result.faceCount} wajah. Hanya satu yang diperbolehkan.';
+        await SoundHelper.playError();
       } else {
         _status = '❌ Wajah tidak terdeteksi. Coba lagi.';
+        await SoundHelper.playError();
       }
     } catch (e) {
       _status = 'Error: $e';
@@ -185,15 +240,15 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
   }
 
   Future<void> _takeAttendance([File? preCapturedImage]) async {
-    if (!_isCameraReady || _isProcessing) return;
+    if (!_isCameraReady) return;
     if (!_hasRegisteredFace) {
-      _status = 'Silakan registrasi wajah terlebih dahulu';
+      _status = '⚠️ Silakan registrasi wajah terlebih dahulu';
       return;
     }
 
     setState(() {
       _isProcessing = true;
-      _status = 'Memproses absensi...';
+      _status = '🔄 Memproses absensi...';
     });
 
     try {
@@ -203,7 +258,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
       final result = await _faceService.detectFace(imageFile);
 
       if (result.success && result.faceCount == 1) {
-        _status = 'Wajah terdeteksi, verifikasi...';
+        _status = '🔍 Verifikasi wajah...';
 
         final userProvider = Provider.of<UserProvider>(context, listen: false);
         final registeredFace =
@@ -227,19 +282,25 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
             if (success) {
               _status = '✅ Absen berhasil!';
               _capturedImage = imageFile;
+              await SoundHelper.playSuccess();
+              await _loadRecentAttendance(); // 🔥 RELOAD RECENT LIST
               _showSuccessDialog();
             } else {
               _status = '❌ Absen gagal, coba lagi';
+              await SoundHelper.playError();
             }
           } else {
             _status = '❌ Wajah tidak cocok dengan data registrasi';
+            await SoundHelper.playError();
           }
         }
       } else if (result.success && result.faceCount > 1) {
         _status =
-            '❌ Terdeteksi ${result.faceCount} wajah. Hanya satu wajah yang diperbolehkan.';
+            '❌ Terdeteksi ${result.faceCount} wajah. Hanya satu yang diperbolehkan.';
+        await SoundHelper.playError();
       } else {
         _status = '❌ Wajah tidak terdeteksi. Coba lagi.';
+        await SoundHelper.playError();
       }
     } catch (e) {
       _status = 'Error: $e';
@@ -261,7 +322,6 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              Navigator.pop(context);
             },
             child: const Text('OK'),
           ),
@@ -270,9 +330,87 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
     );
   }
 
+  // 🔥 WIDGET RECENT ATTENDANCE LIST
+  Widget _buildRecentAttendanceList() {
+    if (_recentAttendance.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Center(
+          child: Column(
+            children: [
+              Icon(Icons.history, size: 32, color: Colors.grey),
+              SizedBox(height: 8),
+              Text(
+                'Belum ada yang absen hari ini',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text(
+            '🕐 Siswa yang baru absen:',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+        ),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount:
+              _recentAttendance.length > 5 ? 5 : _recentAttendance.length,
+          itemBuilder: (context, index) {
+            final item = _recentAttendance[index];
+            final time = DateTime.parse(item['timestamp']);
+            final timeStr =
+                '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+
+            return ListTile(
+              leading: CircleAvatar(
+                backgroundColor: Colors.green.withOpacity(0.2),
+                child: const Icon(Icons.check_circle,
+                    color: Colors.green, size: 18),
+              ),
+              title: Text(
+                item['user_name'] ?? 'Unknown',
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+              subtitle: Text(
+                '${item['method']} • $timeStr',
+                style: const TextStyle(fontSize: 12),
+              ),
+              trailing: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'HADIR',
+                  style: TextStyle(color: Colors.green, fontSize: 10),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
   @override
   void dispose() {
     _detectionTimer?.cancel();
+    _recentListTimer?.cancel();
     _cameraController?.dispose();
     _faceService.dispose();
     super.dispose();
@@ -302,15 +440,56 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
                 color: Colors.green,
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Text(
-                'Auto Mode',
-                style: TextStyle(color: Colors.white, fontSize: 12),
+              child: const Row(
+                children: [
+                  Icon(Icons.speed, size: 14, color: Colors.white),
+                  SizedBox(width: 4),
+                  Text(
+                    'TRIPOD MODE',
+                    style: TextStyle(color: Colors.white, fontSize: 10),
+                  ),
+                ],
               ),
             ),
         ],
       ),
       body: Column(
         children: [
+          // 🔥 STATUS BESAR UNTUK TRIPOD
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            color: _isSuccess
+                ? Colors.green
+                : (_isFaceDetected ? Colors.blue : Colors.grey),
+            child: Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    _isSuccess
+                        ? Icons.check_circle
+                        : (_isFaceDetected ? Icons.face : Icons.camera_front),
+                    color: Colors.white,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    _isSuccess
+                        ? 'ABSEN BERHASIL!'
+                        : (_isFaceDetected
+                            ? 'WAJAH TERDETEKSI'
+                            : 'HADAPKAN WAJAH'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           Expanded(
             flex: 3,
             child: Container(
@@ -333,20 +512,25 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
                                 child: CircularProgressIndicator()),
                           ),
                   ),
-                  // 🔥 KOTAK DETEKSI WAJAH (SELALU TAMPIL SEBAGAI PANDUAN)
                   if (widget.showDetectionBox && _isCameraReady)
                     _buildFaceDetectionBox(),
                 ],
               ),
             ),
           ),
+
+          // 🔥 STATUS TEXT
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              border: Border.all(
+                color: _isFaceDetected
+                    ? Colors.green
+                    : Colors.blue.withOpacity(0.3),
+              ),
             ),
             child: Row(
               children: [
@@ -366,12 +550,15 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
                       color: isDark ? Colors.white70 : Colors.black87,
                       fontWeight:
                           _isFaceDetected ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 14,
                     ),
                   ),
                 ),
               ],
             ),
           ),
+
+          // 🔥 TOMBOL REGISTRASI
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
@@ -390,27 +577,28 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: (_isProcessing || widget.autoCapture)
-                        ? null
-                        : _takeAttendance,
-                    icon: const Icon(Icons.check_circle),
-                    label: Text(widget.autoCapture ? 'Auto Mode ON' : 'Absen'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          widget.autoCapture ? Colors.green : Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
+
+          // 🔥 RECENT ATTENDANCE LIST (TAMBAHKAN DI SINI)
+          if (_hasRegisteredFace)
+            Container(
+              margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: _buildRecentAttendanceList(),
+            ),
+
           if (_capturedImage != null)
             Container(
               margin: const EdgeInsets.all(16),
@@ -432,21 +620,24 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
                 ],
               ),
             ),
+
+          const SizedBox(height: 20),
         ],
       ),
     );
   }
 
-  // 🔥 WIDGET KOTAK DETEKSI (BERUBAH WARNA SAAT WAJAH TERDETEKSI)
+  // 🔥 WIDGET KOTAK DETEKSI
   Widget _buildFaceDetectionBox() {
     return Center(
       child: Container(
-        width: 250,
-        height: 250,
+        width: 280,
+        height: 280,
         decoration: BoxDecoration(
           border: Border.all(
-            color:
-                _isFaceDetected ? Colors.green : Colors.white.withOpacity(0.5),
+            color: _isFaceDetected
+                ? (_isSuccess ? Colors.green : Colors.green)
+                : Colors.white.withOpacity(0.5),
             width: _isFaceDetected ? 4 : 2,
           ),
           borderRadius: BorderRadius.circular(20),
@@ -463,7 +654,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
         child: Align(
           alignment: Alignment.topCenter,
           child: Container(
-            margin: const EdgeInsets.only(top: 12),
+            margin: const EdgeInsets.only(top: -12),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
               color: _isFaceDetected ? Colors.green : Colors.white54,
@@ -475,7 +666,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
                   : '◯ TEMPATKAN WAJAH DI SINI',
               style: TextStyle(
                 color: _isFaceDetected ? Colors.white : Colors.black87,
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: FontWeight.bold,
               ),
             ),

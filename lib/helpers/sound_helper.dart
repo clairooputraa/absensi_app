@@ -1,37 +1,19 @@
 // lib/helpers/sound_helper.dart
-import 'package:audioplayers/audioplayers.dart';
-
 class SoundHelper {
-  // static final AudioPlayer _player = AudioPlayer();
-
-  static Future<void> init() async {
-    // Sementara di-nonaktifkan
-    // try {
-    //   await _player.setSourceAsset('assets/sounds/success.mp3');
-    // } catch (e) {
-    //   print('Error loading success sound: $e');
-    // }
-  }
-
   static Future<void> playSuccess() async {
-    // Sementara di-nonaktifkan
-    // try {
-    //   await _player.play(AssetSource('assets/sounds/success.mp3'));
-    // } catch (e) {
-    //   print('Error playing success sound: $e');
-    // }
+    // Sound sementara dinonaktifkan
+    return;
   }
 
   static Future<void> playError() async {
-    // Sementara di-nonaktifkan
-    // try {
-    //   await _player.play(AssetSource('assets/sounds/error.mp3'));
-    // } catch (e) {
-    //   print('Error playing error sound: $e');
-    // }
+    return;
   }
 
-  static Future<void> dispose() async {
-    // await _player.dispose();
+  static Future<void> playWarning() async {
+    return;
+  }
+
+  static Future<void> playInfo() async {
+    return;
   }
 }

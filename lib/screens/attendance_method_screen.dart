@@ -9,7 +9,7 @@ import 'face_attendance_screen.dart';
 import 'rfid_attendance_screen.dart';
 import 'gps_attendance_screen.dart';
 import 'fingerprint_attendance_screen.dart';
-import 'mass_attendance_screen.dart'; // 🔥 TAMBAHKAN IMPORT INI
+import 'mass_attendance_screen.dart';
 
 class AttendanceMethodScreen extends StatelessWidget {
   const AttendanceMethodScreen({super.key});
@@ -47,7 +47,7 @@ class AttendanceMethodScreen extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
+                      color: Colors.blue.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.settings,
@@ -112,7 +112,7 @@ class AttendanceMethodScreen extends StatelessWidget {
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.5),
                           blurRadius: 10,
                           offset: const Offset(0, -2),
                         ),
@@ -123,7 +123,7 @@ class AttendanceMethodScreen extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.1),
+                            color: Colors.orange.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: const Icon(Icons.people_alt,
@@ -180,7 +180,6 @@ class AttendanceMethodScreen extends StatelessWidget {
     );
   }
 
-  // ... sisanya sama seperti kode Anda yang sudah ada
   Widget _buildMethodCard(BuildContext context, String name, IconData icon,
       Color color, bool isDark) {
     return TweenAnimationBuilder(
@@ -201,17 +200,17 @@ class AttendanceMethodScreen extends StatelessWidget {
               end: Alignment.bottomRight,
               colors: isDark
                   ? [const Color(0xFF1E1E1E), const Color(0xFF2C2C2C)]
-                  : [Colors.white, color.withOpacity(0.05)],
+                  : [Colors.white, color.withValues(alpha: 0.5)],
             ),
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: color.withOpacity(0.2),
+                color: color.withValues(alpha: 0.2),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
             ],
-            border: Border.all(color: color.withOpacity(0.3)),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -220,12 +219,12 @@ class AttendanceMethodScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [color, color.withOpacity(0.7)],
+                    colors: [color, color.withValues(alpha: 0.7)],
                   ),
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: color.withOpacity(0.3),
+                      color: color.withValues(alpha: 0.3),
                       blurRadius: 12,
                       offset: const Offset(0, 4),
                     ),
@@ -322,9 +321,11 @@ class AttendanceMethodScreen extends StatelessWidget {
 
     if (success) {
       await SoundHelper.playSuccess();
+      if (!context.mounted) return;
       _showSuccessDialog(context, method);
     } else {
       await SoundHelper.playError();
+      if (!context.mounted) return;
       _showErrorDialog(context, 'Absensi $method gagal, coba lagi');
     }
   }
@@ -334,7 +335,7 @@ class AttendanceMethodScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Icon(Icons.check_circle, size: 60, color: Colors.green),
+        title: const Icon(Icons.check_circle, size: 60, color: Colors.green),
         content: Text('Absen via $method berhasil!'),
         actions: [
           TextButton(

@@ -1,3 +1,4 @@
+// lib/models/user_model.dart
 class UserModel {
   final String id;
   final String name;
@@ -47,5 +48,29 @@ class UserModel {
       'nip': nip,
       'kelas': kelas,
     };
+  }
+
+  UserModel copyWith({
+    String? id,
+    String? name,
+    String? email,
+    String? role,
+    String? photoUrl,
+    String? phoneNumber,
+    String? address,
+    String? nip,
+    String? kelas,
+  }) {
+    return UserModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      role: role ?? this.role,
+      photoUrl: photoUrl ?? this.photoUrl,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      address: address ?? this.address,
+      nip: nip ?? this.nip,
+      kelas: kelas ?? this.kelas,
+    );
   }
 }

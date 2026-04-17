@@ -8,10 +8,7 @@ import '../providers/theme_provider.dart';
 import '../providers/attendance_provider.dart';
 import '../providers/user_provider.dart';
 import '../helpers/sound_helper.dart';
-import '/screens/camera_selfie_screen.dart';
-import '/screens/face_attendance_screen.dart';
-import '/screens/fingerprint_attendance_screen.dart';
-import '/screens/rfid_attendance_screen.dart';
+
 
 class AttendanceMethodScreen extends StatelessWidget {
   const AttendanceMethodScreen({super.key});
@@ -113,13 +110,13 @@ class AttendanceMethodScreen extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, 2),
             ),
           ],
           border: Border.all(
-            color: color.withOpacity(0.3),
+            color: color.withValues(alpha: 0.3),
           ),
         ),
         child: Column(
@@ -128,7 +125,7 @@ class AttendanceMethodScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, size: 40, color: color),
@@ -175,9 +172,7 @@ class AttendanceMethodScreen extends StatelessWidget {
   }
 
   void _handleAttendance(BuildContext context, String method) async {
-    final attendanceProvider =
-        Provider.of<AttendanceProvider>(context, listen: false);
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
+
 
     switch (method) {
       case 'Wajah':
@@ -209,7 +204,7 @@ class AttendanceMethodScreen extends StatelessWidget {
         break;
       case 'GPS':
         await _simpleAttendance(context, 'GPS');
-        break;
+        break; 
       default:
         await _simpleAttendance(context, method);
         break;
@@ -230,9 +225,11 @@ class AttendanceMethodScreen extends StatelessWidget {
 
     if (success) {
       await SoundHelper.playSuccess();
+      if (!context.mounted) return;
       _showSuccessDialog(context, method);
     } else {
       await SoundHelper.playError();
+      if (!context.mounted) return;
       _showErrorDialog(context, 'Absensi $method gagal, coba lagi');
     }
   }

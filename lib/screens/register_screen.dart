@@ -127,11 +127,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         title: const Text('Daftar Akun'),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back,
-              color: isDark ? Colors.white : Colors.black87),
-          onPressed: () => Navigator.pop(context),
-        ),
+        automaticallyImplyLeading: false, // 🔥 TOMBOL BACK DIHAPUS
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),

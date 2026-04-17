@@ -69,7 +69,7 @@ class ThemeProvider extends ChangeNotifier {
       cardTheme: CardThemeData(
         elevation: 2,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: Color(0xFF1E1E1E),
+        color: const Color(0xFF1E1E1E),
       ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),

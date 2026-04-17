@@ -30,6 +30,12 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       return;
     }
+    //ALur atau logika dari login
+    // 1. Ambil input email & password
+    // 2. Validasi tidak boleh kosong
+    // 3. Panggil AuthService.signIn
+    // 4. Jika berhasil akan pindah ke home screen
+    // 5. Jika gagal akan menampilkan pesan error
 
     setState(() => _isLoading = true);
 

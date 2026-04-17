@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,6 +12,7 @@ import 'camera_selfie_screen.dart';
 import 'rfid_attendance_screen.dart';
 import 'fingerprint_attendance_screen.dart';
 import 'gps_attendance_screen.dart';
+import 'attendance_history_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -57,6 +59,9 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _loadActiveMethod() async {
+    // Baca dari SharedPreferences metode apa yang aktif
+    // (wajah/selfie/rfid/finger/lokasi)
+    // Jika tidak ada, gunakan default wajah
     final prefs = await SharedPreferences.getInstance();
 
     String savedMethod = prefs.getString('active_absen_method') ?? '';
@@ -65,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen>
       setState(() {
         _activeMethod = savedMethod;
       });
-      print('✅ Loaded active method: $_activeMethod');
+      // print('✅ Loaded active method: $_activeMethod');
     } else {
       if (prefs.getBool('presensi_wajah') ?? true) {
         setState(() => _activeMethod = 'wajah');
@@ -165,6 +170,11 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   IconData _getFABIcon() {
+    // Jika metode wajah aktif maka iconnya adalah face
+    // Jika metode selfie aktif maka iconnya adalah camera_alt
+    // Jika metode rfid aktif maka iconnya adalah nfc
+    // Jika metode finger aktif maka iconnya adalah fingerprint
+    // Jika metode lokasi aktif maka iconnya adalah location_on
     switch (_activeMethod) {
       case 'wajah':
         return Icons.face;
@@ -196,6 +206,37 @@ class _HomeScreenState extends State<HomeScreen>
       default:
         return 'Absen Sekarang';
     }
+  }
+
+  // 🔥 WIDGET AVATAR DENGAN FOTO PROFIL
+  Widget _buildProfileAvatar() {
+    return Consumer<UserProvider>(
+      builder: (context, userProvider, _) {
+        final photoUrl = userProvider.currentUser?.photoUrl;
+        final hasPhoto = photoUrl != null && File(photoUrl).existsSync();
+
+        return Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.3),
+                blurRadius: 20,
+                spreadRadius: 5,
+              ),
+            ],
+          ),
+          child: CircleAvatar(
+            radius: 35,
+            backgroundColor: Colors.white,
+            backgroundImage: hasPhoto ? FileImage(File(photoUrl)) : null,
+            child: !hasPhoto
+                ? const Icon(Icons.person, size: 35, color: Color(0xFF2196F3))
+                : null,
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -234,14 +275,14 @@ class _HomeScreenState extends State<HomeScreen>
               backgroundColor: Colors.transparent,
               flexibleSpace: FlexibleSpaceBar(
                 background: Container(
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [
-                        const Color(0xFF2196F3),
-                        const Color(0xFF1565C0),
-                        const Color(0xFF0D47A1),
+                        Color(0xFF2196F3),
+                        Color(0xFF1565C0),
+                        Color(0xFF0D47A1),
                       ],
                     ),
                   ),
@@ -254,24 +295,7 @@ class _HomeScreenState extends State<HomeScreen>
                         children: [
                           Row(
                             children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.white.withOpacity(0.3),
-                                      blurRadius: 20,
-                                      spreadRadius: 5,
-                                    ),
-                                  ],
-                                ),
-                                child: const CircleAvatar(
-                                  radius: 35,
-                                  backgroundColor: Colors.white,
-                                  child: Icon(Icons.person,
-                                      size: 35, color: Color(0xFF2196F3)),
-                                ),
-                              ),
+                              _buildProfileAvatar(),
                               const SizedBox(width: 16),
                               Expanded(
                                 child: Column(
@@ -305,7 +329,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.work,
+                                    const Icon(Icons.work,
                                         size: 14, color: Colors.white),
                                     const SizedBox(width: 6),
                                     Text(
@@ -349,7 +373,7 @@ class _HomeScreenState extends State<HomeScreen>
               actions: [
                 Container(
                   margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     color: Colors.white24,
                     shape: BoxShape.circle,
                   ),
@@ -359,9 +383,28 @@ class _HomeScreenState extends State<HomeScreen>
                     onPressed: () => themeProvider.toggleTheme(),
                   ),
                 ),
+                // 🔥 TOMBOL HISTORY ABSENSI
+                Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: const BoxDecoration(
+                    color: Colors.white24,
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.history, color: Colors.white),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const AttendanceHistoryScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
                 Container(
                   margin: const EdgeInsets.only(right: 16),
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     color: Colors.white24,
                     shape: BoxShape.circle,
                   ),
@@ -398,7 +441,7 @@ class _HomeScreenState extends State<HomeScreen>
                           BoxShadow(
                             color: isDark
                                 ? Colors.black26
-                                : Colors.blue.withOpacity(0.1),
+                                : Colors.blue.withValues(alpha: 0.1),
                             blurRadius: 20,
                             offset: const Offset(0, 8),
                           ),
@@ -455,7 +498,7 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.location_on,
+                                const Icon(Icons.location_on,
                                     size: 14, color: Colors.white),
                                 const SizedBox(width: 4),
                                 Text(
@@ -478,7 +521,7 @@ class _HomeScreenState extends State<HomeScreen>
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
+                        color: Colors.blue.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Row(
@@ -513,7 +556,7 @@ class _HomeScreenState extends State<HomeScreen>
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.green.withOpacity(0.2),
+                              color: Colors.green.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: const Text(
@@ -544,7 +587,7 @@ class _HomeScreenState extends State<HomeScreen>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(0.1),
+                            color: Colors.blue.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: const Text(
@@ -572,7 +615,7 @@ class _HomeScreenState extends State<HomeScreen>
                           BoxShadow(
                             color: isDark
                                 ? Colors.black26
-                                : Colors.blue.withOpacity(0.1),
+                                : Colors.blue.withValues(alpha: 0.1),
                             blurRadius: 20,
                             offset: const Offset(0, 8),
                           ),
@@ -603,7 +646,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: Colors.green.withOpacity(0.1),
+                                  color: Colors.green.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: const Row(
@@ -628,7 +671,7 @@ class _HomeScreenState extends State<HomeScreen>
                               borderRadius: BorderRadius.circular(20),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.blue.withOpacity(0.3),
+                                  color: Colors.blue.withValues(alpha: 0.3),
                                   blurRadius: 15,
                                   offset: const Offset(0, 5),
                                 ),
@@ -692,18 +735,14 @@ class _HomeScreenState extends State<HomeScreen>
           ],
         ),
       ),
-
-      // 🔥 HANYA FAB - TIDAK ADA bottomNavigationBar
       floatingActionButton: FloatingActionButton(
-        onPressed: _handleFABPress,
+        onPressed: _handleFABPress, // Klik akan membuka screen sesuai metode
         backgroundColor: const Color(0xFF2196F3),
         elevation: 8,
-        child: Icon(_getFABIcon(), size: 32, color: Colors.white),
         tooltip: _getFABTooltip(),
+        child: Icon(_getFABIcon(), size: 32, color: Colors.white),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-
-      // 🔥🔥🔥 TIDAK ADA bottomNavigationBar DI SINI! 🔥🔥🔥
     );
   }
 
@@ -711,9 +750,9 @@ class _HomeScreenState extends State<HomeScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: color.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [

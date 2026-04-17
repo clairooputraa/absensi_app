@@ -1,3 +1,4 @@
+// lib/screens/fingerprint_attendance_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
@@ -29,12 +30,14 @@ class _FingerprintAttendanceScreenState
 
   Future<void> _checkSupport() async {
     final supported = await _fingerprintService.isDeviceSupported();
-    setState(() {
-      _isSupported = supported;
-      if (!supported) {
-        _status = 'Perangkat tidak mendukung fingerprint';
-      }
-    });
+    if (mounted) {
+      setState(() {
+        _isSupported = supported;
+        if (!supported) {
+          _status = 'Perangkat tidak mendukung fingerprint';
+        }
+      });
+    }
   }
 
   Future<void> _startFingerprintAttendance() async {
@@ -49,8 +52,13 @@ class _FingerprintAttendanceScreenState
       final isAuthenticated = await _fingerprintService.authenticate();
 
       if (isAuthenticated) {
-        _status = 'Verifikasi berhasil, memproses absensi...';
+        if (mounted) {
+          setState(() {
+            _status = 'Verifikasi berhasil, memproses absensi...';
+          });
+        }
 
+        if (!mounted) return;
         final attendanceProvider =
             Provider.of<AttendanceProvider>(context, listen: false);
         final userProvider = Provider.of<UserProvider>(context, listen: false);
@@ -62,30 +70,36 @@ class _FingerprintAttendanceScreenState
           timestamp: DateTime.now(),
         );
 
-        if (success) {
+        if (success && mounted) {
           await SoundHelper.playSuccess();
           _showSuccessDialog();
-        } else {
+        } else if (mounted) {
           await SoundHelper.playError();
           _showErrorDialog('Absensi gagal, coba lagi');
         }
       } else {
-        await SoundHelper.playError();
-        _showErrorDialog('Verifikasi fingerprint gagal');
-        setState(() {
-          _status = 'Verifikasi gagal, coba lagi';
-        });
+        if (mounted) {
+          await SoundHelper.playError();
+          _showErrorDialog('Verifikasi fingerprint gagal');
+          setState(() {
+            _status = 'Verifikasi gagal, coba lagi';
+          });
+        }
       }
     } catch (e) {
-      await SoundHelper.playError();
-      _showErrorDialog('Error: $e');
-      setState(() {
-        _status = 'Error: $e';
-      });
+      if (mounted) {
+        await SoundHelper.playError();
+        _showErrorDialog('Error: $e');
+        setState(() {
+          _status = 'Error: $e';
+        });
+      }
     } finally {
-      setState(() {
-        _isProcessing = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
     }
   }
 
@@ -139,6 +153,10 @@ class _FingerprintAttendanceScreenState
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: Center(
         child: Padding(
@@ -151,13 +169,13 @@ class _FingerprintAttendanceScreenState
                 padding: const EdgeInsets.all(32),
                 decoration: BoxDecoration(
                   color: _isProcessing
-                      ? Colors.blue.withOpacity(0.1)
-                      : Colors.green.withOpacity(0.1),
+                      ? Colors.blue.withValues(alpha: 0.1)
+                      : Colors.green.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                   boxShadow: _isProcessing
                       ? [
                           BoxShadow(
-                            color: Colors.blue.withOpacity(0.5),
+                            color: Colors.blue.withValues(alpha: 0.5),
                             blurRadius: 20,
                             spreadRadius: 5,
                           ),
@@ -215,8 +233,8 @@ class _FingerprintAttendanceScreenState
                 ),
               ),
               if (!_isSupported)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
+                const Padding(
+                  padding: EdgeInsets.only(top: 16),
                   child: Text(
                     'Perangkat Anda tidak mendukung fingerprint',
                     style: TextStyle(color: Colors.red, fontSize: 12),

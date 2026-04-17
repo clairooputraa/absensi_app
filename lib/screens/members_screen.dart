@@ -13,7 +13,7 @@ class MembersScreen extends StatefulWidget {
 class _MembersScreenState extends State<MembersScreen>
     with TickerProviderStateMixin {
   // GANTI dari SingleTickerProviderStateMixin ke TickerProviderStateMixin
-  int _selectedTab = 0;
+  // int _selectedTab = 0; // Removed unused field
   String _searchQuery = '';
   String _selectedClass = 'Semua';
   int _currentPage = 1;
@@ -117,8 +117,8 @@ class _MembersScreenState extends State<MembersScreen>
           children: [
             // Header Premium
             Container(
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
+            decoration: const BoxDecoration(
+                gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
@@ -127,7 +127,7 @@ class _MembersScreenState extends State<MembersScreen>
                     Color(0xFF0D47A1)
                   ],
                 ),
-                borderRadius: const BorderRadius.only(
+                borderRadius: BorderRadius.only(
                   bottomLeft: Radius.circular(30),
                   bottomRight: Radius.circular(30),
                 ),
@@ -146,7 +146,7 @@ class _MembersScreenState extends State<MembersScreen>
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text(
+                      const Text(
                         'Kelola data anggota dengan mudah',
                         style: TextStyle(color: Colors.white70, fontSize: 14),
                       ),
@@ -172,9 +172,9 @@ class _MembersScreenState extends State<MembersScreen>
                             Tab(text: 'Performance'),
                           ],
                           onTap: (index) {
-                            setState(() {
-                              _selectedTab = index;
-                            });
+                            // setState(() {
+                            //   _selectedTab = index;
+                            // });
                           },
                         ),
                       ),
@@ -227,7 +227,7 @@ class _MembersScreenState extends State<MembersScreen>
               boxShadow: [
                 BoxShadow(
                     color:
-                        isDark ? Colors.black26 : Colors.blue.withOpacity(0.1),
+                        isDark ? Colors.black26 : Colors.blue.withValues(alpha: 0.1),
                     blurRadius: 10,
                     offset: const Offset(0, 4)),
               ],
@@ -260,7 +260,7 @@ class _MembersScreenState extends State<MembersScreen>
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-              color: isDark ? Colors.black26 : Colors.blue.withOpacity(0.1),
+              color: isDark ? Colors.black26 : Colors.blue.withValues(alpha: 0.1),
               blurRadius: 10,
               offset: const Offset(0, 4)),
         ],
@@ -270,7 +270,7 @@ class _MembersScreenState extends State<MembersScreen>
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [color, color.withOpacity(0.7)]),
+              gradient: LinearGradient(colors: [color, color.withValues(alpha: 0.7)]),
               borderRadius: BorderRadius.circular(15),
             ),
             child: Icon(icon, color: Colors.white, size: 24),
@@ -388,7 +388,7 @@ class _MembersScreenState extends State<MembersScreen>
                 ),
                 child: ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: const Color(0xFF2196F3).withOpacity(0.1),
+                    backgroundColor: const Color(0xFF2196F3).withValues(alpha: 0.1),
                     child: Text(member['name'][0].toUpperCase(),
                         style: const TextStyle(color: Color(0xFF2196F3))),
                   ),
@@ -404,7 +404,7 @@ class _MembersScreenState extends State<MembersScreen>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.1),
+                              color: Colors.red.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(12)),
                           child: Text(member['status'],
                               style: const TextStyle(
@@ -416,7 +416,7 @@ class _MembersScreenState extends State<MembersScreen>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.1),
+                              color: Colors.blue.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(12)),
                           child: const Text('admin',
                               style:
@@ -566,13 +566,13 @@ class _MembersScreenState extends State<MembersScreen>
                           const SizedBox(height: 4),
                           Row(
                             children: [
-                              Icon(Icons.history, size: 12, color: Colors.grey),
+                              const Icon(Icons.history, size: 12, color: Colors.grey),
                               const SizedBox(width: 4),
                               Text('${item['logs']} Logs',
                                   style: const TextStyle(
                                       fontSize: 11, color: Colors.grey)),
                               const SizedBox(width: 12),
-                              Icon(Icons.access_time,
+                              const Icon(Icons.access_time,
                                   size: 12, color: Colors.grey),
                               const SizedBox(width: 4),
                               Text('${item['hours']}hrs',

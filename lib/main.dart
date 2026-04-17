@@ -1,3 +1,5 @@
+import 'package:absensi_app/screens/attendance_history_screen.dart';
+import 'package:absensi_app/screens/manual_attendance_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Provider;
@@ -13,9 +15,9 @@ import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/attendance_method_screen.dart';
 
-const String SUPABASE_URL = 'https://jvyvebcozmjwdunybukg.supabase.co';
+const String SUPABASE_URL = 'https://dxwkenwmkumhzdasnltu.supabase.co';
 const String SUPABASE_ANON_KEY =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp2eXZlYmNvem1qd2R1bnlidWtnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDU1MTAsImV4cCI6MjA5MTYyMTUxMH0.fa_1-6cPC3m_0I56BOZZOdFEDl4pEdNYZnF7u7SeV5I';
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2tlbndta3VtaHpkYXNubHR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwMzUwMDYsImV4cCI6MjA5MTYxMTAwNn0.1-sQaWxAUg0S--Hxhi9_S5sDr-pg171kqDus3z8NxGk';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,6 +57,9 @@ class MyApp extends StatelessWidget {
               '/home': (context) => const MainScreen(),
               '/attendance': (context) => const AttendanceMethodScreen(),
               '/profile': (context) => const ProfileScreen(),
+              '/attendance_history': (context) =>
+                  const AttendanceHistoryScreen(),
+              '/manual_attendance': (context) => const ManualAttendanceScreen(),
             },
           );
         },

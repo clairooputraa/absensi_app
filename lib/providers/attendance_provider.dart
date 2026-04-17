@@ -1,5 +1,72 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:connectivity_plus/connectivity_plus.dart'; 
+
+// ==================== OFFLINE ATTENDANCE MODEL ====================
+class OfflineAttendance {
+  final String id;
+  final String userId;
+  final String userName;
+  final String method;
+  final String status;
+  final DateTime timestamp;
+  final double? latitude;
+  final double? longitude;
+  final String? photoUrl;
+  final String? uid;
+  bool isSynced;
+  DateTime? syncedAt;
+
+  OfflineAttendance({
+    required this.id,
+    required this.userId,
+    required this.userName,
+    required this.method,
+    required this.status,
+    required this.timestamp,
+    this.latitude,
+    this.longitude,
+    this.photoUrl,
+    this.uid,
+    this.isSynced = false,
+    this.syncedAt,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'userId': userId,
+        'userName': userName,
+        'method': method,
+        'status': status,
+        'timestamp': timestamp.toIso8601String(),
+        'latitude': latitude,
+        'longitude': longitude,
+        'photoUrl': photoUrl,
+        'uid': uid,
+        'isSynced': isSynced,
+        'syncedAt': syncedAt?.toIso8601String(),
+      };
+
+  factory OfflineAttendance.fromJson(Map<String, dynamic> json) {
+    return OfflineAttendance(
+      id: json['id'],
+      userId: json['userId'],
+      userName: json['userName'],
+      method: json['method'],
+      status: json['status'],
+      timestamp: DateTime.parse(json['timestamp']),
+      latitude: json['latitude'],
+      longitude: json['longitude'],
+      photoUrl: json['photoUrl'],
+      uid: json['uid'],
+      isSynced: json['isSynced'] ?? false,
+      syncedAt:
+          json['syncedAt'] != null ? DateTime.parse(json['syncedAt']) : null,
+    );
+  }
+}
 
 class AttendanceProvider extends ChangeNotifier {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -15,6 +82,13 @@ class AttendanceProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _allUsers = [];
   Map<String, dynamic> _dailyStats = {};
 
+  // 🔥 OFFLINE PROPERTIES
+  late SharedPreferences _prefs;
+  bool _isOnline = true;
+  int _pendingSyncCount = 0;
+  final Connectivity _connectivity = Connectivity();
+  static const String _offlineKey = 'offline_attendance';
+
   // Getters
   bool get faceEnabled => _faceEnabled;
   bool get rfidEnabled => _rfidEnabled;
@@ -25,6 +99,48 @@ class AttendanceProvider extends ChangeNotifier {
   Map<String, int> get weeklyStats => _weeklyStats;
   List<Map<String, dynamic>> get allUsers => _allUsers;
   Map<String, dynamic> get dailyStats => _dailyStats;
+  bool get isOnline => _isOnline;
+  int get pendingSyncCount => _pendingSyncCount;
+
+  // ==================== INIT OFFLINE ====================
+
+  Future<void> initOffline() async {
+    _prefs = await SharedPreferences.getInstance();
+    await _loadOfflineCount();
+
+    // Cek koneksi awal
+    final dynamic result = await _connectivity.checkConnectivity();
+    if (result is List) {
+      _isOnline = result.any((r) => r != ConnectivityResult.none);
+    } else {
+      _isOnline = result != ConnectivityResult.none;
+    }
+
+    // Listen perubahan koneksi
+    _connectivity.onConnectivityChanged.listen((result) {
+      final wasOnline = _isOnline;
+      final dynamic res = result;
+      if (res is List) {
+        _isOnline = res.any((r) => r != ConnectivityResult.none);
+      } else {
+        _isOnline = res != ConnectivityResult.none;
+      }
+
+      if (!wasOnline && _isOnline) {
+        // Koneksi kembali, sync data offline
+        _syncAllOfflineData();
+      }
+      notifyListeners();
+    });
+
+    notifyListeners();
+  }
+
+  Future<void> _loadOfflineCount() async {
+    final List<String>? list = _prefs.getStringList(_offlineKey);
+    _pendingSyncCount = list?.length ?? 0;
+    notifyListeners();
+  }
 
   // ==================== SETTINGS ====================
 
@@ -70,7 +186,7 @@ class AttendanceProvider extends ChangeNotifier {
     }
   }
 
-  // ==================== ATTENDANCE METHODS ====================
+  // ==================== ATTENDANCE METHODS (LOCAL FIRST) ====================
 
   Future<bool> markAttendance({
     required String userId,
@@ -82,84 +198,286 @@ class AttendanceProvider extends ChangeNotifier {
     double? longitude,
     String? photoUrl,
   }) async {
+    // Ambil nama user (coba dari cache dulu)
+    String userName = await _getUserName(userId);
+
+    // 🔥 1. BUAT ID UNIK
+    final attendanceId = '${DateTime.now().millisecondsSinceEpoch}_$userId';
+
+    // 🔥 2. SIMPAN KE LOCAL STORAGE DULU (PRIORITAS UTAMA)
+    final offlineData = OfflineAttendance(
+      id: attendanceId,
+      userId: userId,
+      userName: userName,
+      method: method,
+      status: status,
+      timestamp: timestamp,
+      uid: uid,
+      latitude: latitude,
+      longitude: longitude,
+      photoUrl: photoUrl,
+      isSynced: false,
+    );
+
+    await _saveToLocal(offlineData);
+
+    // 🔥 3. UPDATE LOCAL HISTORY UNTUK TAMPILAN
+    _attendanceHistory.insert(0, {
+      'user_id': userId,
+      'user_name': userName,
+      'method': method,
+      'status': status,
+      'timestamp': timestamp.toIso8601String(),
+      'is_synced': false,
+    });
+
+    // 🔥 4. UPDATE STATS LOKAL
+    await _updateLocalStats(userId);
+
+    notifyListeners();
+
+    // 🔥 5. KIRIM KE SERVER (BACKGROUND, TIDAK NUNGGU)
+    if (_isOnline) {
+      _sendToServer(attendanceId);
+    }
+
+    return true;
+  }
+
+  Future<void> _saveToLocal(OfflineAttendance attendance) async {
+    final List<String>? existing = _prefs.getStringList(_offlineKey);
+    final List<String> list = existing ?? [];
+    list.add(jsonEncode(attendance.toJson()));
+    await _prefs.setStringList(_offlineKey, list);
+    _pendingSyncCount = list.length;
+    notifyListeners();
+  }
+
+  Future<void> _sendToServer(String attendanceId) async {
+    final List<String>? list = _prefs.getStringList(_offlineKey);
+    if (list == null) return;
+
+    int index = -1;
+    OfflineAttendance? attendance;
+
+    for (int i = 0; i < list.length; i++) {
+      final data = OfflineAttendance.fromJson(jsonDecode(list[i]));
+      if (data.id == attendanceId) {
+        index = i;
+        attendance = data;
+        break;
+      }
+    }
+
+    if (attendance == null) return;
+    if (attendance.isSynced) return;
+
+    final String userId = attendance.userId;
+    final String userName = attendance.userName;
+    final String timestampStr = attendance.timestamp.toIso8601String();
+
     try {
-      final userResponse = await _supabase
+      await _supabase.from('attendance').insert({
+        'user_id': userId,
+        'user_name': userName,
+        'uid': attendance.uid,
+        'method': attendance.method,
+        'status': attendance.status,
+        'latitude': attendance.latitude,
+        'longitude': attendance.longitude,
+        'photo_url': attendance.photoUrl,
+        'timestamp': timestampStr,
+      });
+
+      attendance.isSynced = true;
+      attendance.syncedAt = DateTime.now();
+      list[index] = jsonEncode(attendance.toJson());
+      await _prefs.setStringList(_offlineKey, list);
+
+      // Cari index history tanpa menggunakan closure yang bermasalah
+      int historyIndex = -1;
+      for (int i = 0; i < _attendanceHistory.length; i++) {
+        if (_attendanceHistory[i]['timestamp'] == timestampStr &&
+            _attendanceHistory[i]['user_id'] == userId) {
+          historyIndex = i;
+          break;
+        }
+      }
+      if (historyIndex != -1) {
+        _attendanceHistory[historyIndex]['is_synced'] = true;
+      }
+
+      int newCount = 0;
+      for (int i = 0; i < list.length; i++) {
+        final data = OfflineAttendance.fromJson(jsonDecode(list[i]));
+        if (!data.isSynced) {
+          newCount++;
+        }
+      }
+      _pendingSyncCount = newCount;
+
+      notifyListeners();
+      debugPrint('✅ Synced: $userName - ${attendance.method}');
+    } catch (e) {
+      debugPrint('❌ Sync failed: $e');
+    }
+  }
+
+  Future<void> _syncAllOfflineData() async {
+    if (!_isOnline) return;
+
+    final List<String>? list = _prefs.getStringList(_offlineKey);
+    if (list == null) return;
+
+    for (int i = 0; i < list.length; i++) {
+      final data = OfflineAttendance.fromJson(jsonDecode(list[i]));
+      if (!data.isSynced) {
+        await _sendToServer(data.id);
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+    }
+  }
+
+  Future<void> syncNow() async {
+    if (!_isOnline) {
+      debugPrint('Tidak ada koneksi internet');
+      return;
+    }
+    await _syncAllOfflineData();
+  }
+
+  Future<String> _getUserName(String userId) async {
+    try {
+      final cachedUser = _allUsers.cast<Map<String, dynamic>?>().firstWhere(
+            (u) => u?['id'] == userId,
+            orElse: () => null,
+          );
+      if (cachedUser != null) {
+        return cachedUser['name'] ?? 'Unknown';
+      }
+    } catch (e) {
+      // Ignore
+    }
+
+    try {
+      final response = await _supabase
           .from('users')
           .select('name')
           .eq('id', userId)
           .maybeSingle();
-
-      final userName = userResponse?['name'] ?? 'Unknown';
-
-      await _supabase.from('attendance').insert({
-        'user_id': userId,
-        'user_name': userName,
-        'uid': uid,
-        'method': method,
-        'status': status,
-        'latitude': latitude,
-        'longitude': longitude,
-        'photo_url': photoUrl,
-        'timestamp': timestamp.toIso8601String(),
-      });
-
-      await loadAttendanceHistory(userId);
-      await loadWeeklyStats(userId);
-      await loadDailyStats(DateTime.now());
-
-      return true;
+      return response?['name'] ?? 'Unknown';
     } catch (e) {
-      debugPrint('Error marking attendance: $e');
-      return false;
+      return 'Unknown';
     }
+  }
+
+  Future<void> _updateLocalStats(String userId) async {
+    final List<String>? list = _prefs.getStringList(_offlineKey);
+    if (list == null) return;
+
+    final List<OfflineAttendance> userData = [];
+    for (int i = 0; i < list.length; i++) {
+      final data = OfflineAttendance.fromJson(jsonDecode(list[i]));
+      if (data.userId == userId) {
+        userData.add(data);
+      }
+    }
+
+    final now = DateTime.now();
+    final startOfWeek =
+        DateTime(now.year, now.month, now.day - now.weekday + 1);
+
+    final List<OfflineAttendance> weekData = [];
+    for (int i = 0; i < userData.length; i++) {
+      if (userData[i].timestamp.isAfter(startOfWeek)) {
+        weekData.add(userData[i]);
+      }
+    }
+
+    int hadir = 0, izin = 0, sakit = 0, alpha = 0;
+    for (int i = 0; i < weekData.length; i++) {
+      if (weekData[i].status == 'Hadir') {
+        hadir++;
+      } else if (weekData[i].status == 'Izin') {
+        izin++;
+      } else if (weekData[i].status == 'Sakit') {
+        sakit++;
+      } else if (weekData[i].status == 'Alpha') {
+        alpha++;
+      }
+    }
+
+    _weeklyStats = {
+      'hadir': hadir,
+      'izin': izin,
+      'sakit': sakit,
+      'alpha': alpha,
+    };
+    notifyListeners();
   }
 
   // ==================== HISTORY & STATS ====================
 
   Future<void> loadAttendanceHistory(String userId) async {
-    try {
-      // 🔥 PERBAIKAN: Pakai filter di dalam select
-      final response = await _supabase
-          .from('attendance')
-          .select('*')
-          .eq('user_id', userId)
-          .order('timestamp', ascending: false);
+    // Ambil dari local storage
+    final List<String>? list = _prefs.getStringList(_offlineKey);
+    if (list != null && list.isNotEmpty) {
+      final List<Map<String, dynamic>> localHistory = [];
 
-      _attendanceHistory = List<Map<String, dynamic>>.from(response);
+      for (int i = 0; i < list.length; i++) {
+        final data = OfflineAttendance.fromJson(jsonDecode(list[i]));
+        localHistory.add({
+          'user_id': data.userId,
+          'user_name': data.userName,
+          'method': data.method,
+          'status': data.status,
+          'timestamp': data.timestamp.toIso8601String(),
+          'is_synced': data.isSynced,
+        });
+      }
+
+      final List<Map<String, dynamic>> filtered = [];
+      for (int i = 0; i < localHistory.length; i++) {
+        if (localHistory[i]['user_id'] == userId) {
+          filtered.add(localHistory[i]);
+        }
+      }
+
+      _attendanceHistory = filtered;
       notifyListeners();
-    } catch (e) {
-      debugPrint('Error loading history: $e');
     }
   }
 
   Future<void> loadWeeklyStats(String userId) async {
-    try {
-      final now = DateTime.now();
-      final startOfWeek =
-          DateTime(now.year, now.month, now.day - now.weekday + 1);
+    await _updateLocalStats(userId);
 
-      // 🔥 PERBAIKAN: Pakai filter langsung
-      final response = await _supabase
-          .from('attendance')
-          .select('status')
-          .eq('user_id', userId)
-          .gte('timestamp', startOfWeek.toIso8601String());
+    if (_isOnline) {
+      try {
+        final now = DateTime.now();
+        final startOfWeek =
+            DateTime(now.year, now.month, now.day - now.weekday + 1);
 
-      _weeklyStats = {
-        'hadir': response.where((a) => a['status'] == 'Hadir').length,
-        'izin': response.where((a) => a['status'] == 'Izin').length,
-        'sakit': response.where((a) => a['status'] == 'Sakit').length,
-        'alpha': response.where((a) => a['status'] == 'Alpha').length,
-      };
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error loading weekly stats: $e');
+        final response = await _supabase
+            .from('attendance')
+            .select('status')
+            .eq('user_id', userId)
+            .gte('timestamp', startOfWeek.toIso8601String());
+
+        _weeklyStats = {
+          'hadir': response.where((a) => a['status'] == 'Hadir').length,
+          'izin': response.where((a) => a['status'] == 'Izin').length,
+          'sakit': response.where((a) => a['status'] == 'Sakit').length,
+          'alpha': response.where((a) => a['status'] == 'Alpha').length,
+        };
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Error loading weekly stats from server: $e');
+      }
     }
   }
 
   Future<void> loadAllUsers() async {
     try {
-      // 🔥 PERBAIKAN: Pakai filter langsung
       final response = await _supabase
           .from('users')
           .select('*')
@@ -181,7 +499,6 @@ class AttendanceProvider extends ChangeNotifier {
       await loadAllUsers();
       final totalUsers = _allUsers.length;
 
-      // 🔥 PERBAIKAN: Pakai filter langsung
       final response = await _supabase
           .from('attendance')
           .select('status')
@@ -230,7 +547,6 @@ class AttendanceProvider extends ChangeNotifier {
     await loadAllUsers();
     final users = List<Map<String, dynamic>>.from(_allUsers);
 
-    // 🔥 PERBAIKAN: Pakai filter langsung
     final existingAttendance = await _supabase
         .from('attendance')
         .select('user_id')
@@ -276,7 +592,6 @@ class AttendanceProvider extends ChangeNotifier {
     );
   }
 
-  // 🔥 METHOD GET ATTENDANCE HISTORY (TANPA filter tanggal dulu)
   Future<List<Map<String, dynamic>>> getAttendanceHistory({
     String? userId,
     int limit = 50,
@@ -306,6 +621,207 @@ class AttendanceProvider extends ChangeNotifier {
 
   Future<Map<String, dynamic>> getDailyStats(DateTime date) async {
     return await loadDailyStats(date);
+  }
+
+  // ==================== HISTORY MASSAL (TAMBAHAN BARU) ====================
+
+  // 🔥 GET HISTORY UNTUK HARI INI (siapa sudah absen, siapa belum)
+  Future<Map<String, dynamic>> getTodayAttendanceHistory() async {
+    try {
+      final now = DateTime.now();
+      final startOfDay = DateTime(now.year, now.month, now.day);
+      final endOfDay = startOfDay.add(const Duration(days: 1));
+
+      // Ambil semua user aktif
+      await loadAllUsers();
+      final allUsers = List<Map<String, dynamic>>.from(_allUsers);
+
+      // Ambil data absen hari ini dari server
+      List<Map<String, dynamic>> attendanceData = [];
+      if (_isOnline) {
+        try {
+          final response = await _supabase
+              .from('attendance')
+              .select('user_id, user_name, method, status, timestamp')
+              .gte('timestamp', startOfDay.toIso8601String())
+              .lt('timestamp', endOfDay.toIso8601String());
+          attendanceData = List<Map<String, dynamic>>.from(response);
+        } catch (e) {
+          debugPrint('Error getting attendance from server: $e');
+        }
+      }
+
+      // Gabungkan dengan data offline
+      final List<String>? offlineList = _prefs.getStringList(_offlineKey);
+      final Map<String, Map<String, dynamic>> attendedMap = {};
+
+      // Data dari server
+      for (var data in attendanceData) {
+        attendedMap[data['user_id']] = {
+          'method': data['method'],
+          'status': data['status'],
+          'timestamp': data['timestamp'],
+        };
+      }
+
+      // Data dari offline
+      if (offlineList != null) {
+        for (var item in offlineList) {
+          final data = OfflineAttendance.fromJson(jsonDecode(item));
+          if (data.timestamp.isAfter(startOfDay) &&
+              data.timestamp.isBefore(endOfDay)) {
+            attendedMap[data.userId] = {
+              'method': data.method,
+              'status': data.status,
+              'timestamp': data.timestamp.toIso8601String(),
+            };
+          }
+        }
+      }
+
+      // Buat daftar lengkap (sudah absen dan belum)
+      final List<Map<String, dynamic>> attended = [];
+      final List<Map<String, dynamic>> notAttended = [];
+
+      for (var user in allUsers) {
+        final userId = user['id'];
+        final userName = user['name'] ?? 'Unknown';
+
+        if (attendedMap.containsKey(userId)) {
+          attended.add({
+            'user_id': userId,
+            'user_name': userName,
+            'method': attendedMap[userId]!['method'],
+            'status': attendedMap[userId]!['status'],
+            'timestamp': attendedMap[userId]!['timestamp'],
+          });
+        } else {
+          notAttended.add({
+            'user_id': userId,
+            'user_name': userName,
+          });
+        }
+      }
+
+      return {
+        'total_users': allUsers.length,
+        'attended_count': attended.length,
+        'not_attended_count': notAttended.length,
+        'attended': attended,
+        'not_attended': notAttended,
+      };
+    } catch (e) {
+      debugPrint('Error getting today history: $e');
+      return {
+        'total_users': 0,
+        'attended_count': 0,
+        'not_attended_count': 0,
+        'attended': [],
+        'not_attended': [],
+      };
+    }
+  }
+
+  // 🔥 GET HISTORY BULANAN
+  Future<Map<String, dynamic>> getMonthlyAttendanceHistory(
+      int year, int month) async {
+    try {
+      final startDate = DateTime(year, month, 1);
+      final endDate = DateTime(year, month + 1, 0);
+
+      List<Map<String, dynamic>> response = [];
+      if (_isOnline) {
+        try {
+          final result = await _supabase
+              .from('attendance')
+              .select('user_id, user_name, method, status, timestamp')
+              .gte('timestamp', startDate.toIso8601String())
+              .lte('timestamp', endDate.toIso8601String())
+              .order('timestamp', ascending: false);
+          response = List<Map<String, dynamic>>.from(result);
+        } catch (e) {
+          debugPrint('Error getting monthly from server: $e');
+        }
+      }
+
+      // Kelompokkan per tanggal
+      final Map<String, List<Map<String, dynamic>>> groupedByDate = {};
+
+      for (var data in response) {
+        final date = DateTime.parse(data['timestamp']).toLocal();
+        final dateKey = '${date.day}/${date.month}/${date.year}';
+
+        if (!groupedByDate.containsKey(dateKey)) {
+          groupedByDate[dateKey] = [];
+        }
+        groupedByDate[dateKey]!.add({
+          'user_name': data['user_name'],
+          'method': data['method'],
+          'status': data['status'],
+          'time':
+              '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
+        });
+      }
+
+      return {
+        'year': year,
+        'month': month,
+        'total_records': response.length,
+        'grouped_by_date': groupedByDate,
+      };
+    } catch (e) {
+      debugPrint('Error getting monthly history: $e');
+      return {};
+    }
+  }
+
+  // 🔥 GET HISTORY PER USER
+  Future<List<Map<String, dynamic>>> getUserAttendanceHistory(String userId,
+      {int limit = 20}) async {
+    try {
+      List<Map<String, dynamic>> response = [];
+
+      if (_isOnline) {
+        try {
+          final result = await _supabase
+              .from('attendance')
+              .select('method, status, timestamp')
+              .eq('user_id', userId)
+              .order('timestamp', ascending: false)
+              .limit(limit);
+          response = List<Map<String, dynamic>>.from(result);
+        } catch (e) {
+          debugPrint('Error getting user history from server: $e');
+        }
+      }
+
+      // Gabungkan dengan offline data
+      final List<String>? offlineList = _prefs.getStringList(_offlineKey);
+      if (offlineList != null) {
+        for (var item in offlineList) {
+          final data = OfflineAttendance.fromJson(jsonDecode(item));
+          if (data.userId == userId) {
+            response.add({
+              'method': data.method,
+              'status': data.status,
+              'timestamp': data.timestamp.toIso8601String(),
+            });
+          }
+        }
+      }
+
+      // Sort by timestamp descending
+      response.sort((a, b) {
+        final dateA = DateTime.parse(a['timestamp']);
+        final dateB = DateTime.parse(b['timestamp']);
+        return dateB.compareTo(dateA);
+      });
+
+      return response.take(limit).toList();
+    } catch (e) {
+      debugPrint('Error getting user history: $e');
+      return [];
+    }
   }
 
   // ==================== METHODS FOR UI ====================
@@ -428,7 +944,6 @@ class AttendanceProvider extends ChangeNotifier {
   }
 }
 
-// 🔥 MODEL untuk hasil absensi massal
 class MassAttendanceResult {
   final int success;
   final int failed;

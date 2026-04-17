@@ -1,0 +1,52 @@
+// lib/services/zk9500_service.dart
+import 'package:zkfinger10/zkfinger10.dart';
+
+class ZK9500Service {
+  Future<bool> openConnection() async {
+    try {
+      await ZkFinger.openConnection();
+      return true;
+    } catch (e) {
+      print('Connection failed: $e');
+      return false;
+    }
+  }
+
+  Future<void> closeConnection() async {
+    await ZkFinger.closeConnection();
+  }
+
+  Future<bool> registerFingerprint(String userId) async {
+    try {
+      await ZkFinger.registerFinger(userId: userId);
+      return true;
+    } catch (e) {
+      print('Register failed: $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> identifyFingerprint() async {
+    try {
+      return await ZkFinger.identify();
+    } catch (e) {
+      print('Identify failed: $e');
+      return null;
+    }
+  }
+
+  Future<bool> checkUserExists(String userId) async {
+    try {
+      final exists = await ZkFinger.checkUserExists(userId: userId);
+      return exists ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  void listenToStatus(Function(String) onStatusChanged) {
+    ZkFinger.fingerStatusChangeStream.listen((status) {
+      onStatusChanged(status['message'] ?? '');
+    });
+  }
+}
