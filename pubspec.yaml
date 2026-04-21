@@ -22,7 +22,6 @@ dependencies:
   path_provider: ^2.1.5
   sqflite: ^2.3.0
 
-  #zkfinger10: ^1.0.0
   #gps
   geolocator: ^11.0.0
   google_maps_flutter: ^2.5.0
@@ -33,40 +32,38 @@ dependencies:
   image_picker: ^1.0.5
   image: ^4.1.7
 
-  #calendar
-  #table_calendar: ^3.2.0
-
   # Face Recognition
   google_mlkit_face_detection: ^0.11.0
-  # tflite_flutter: ^0.10.4  # HAPUS - tidak diperlukan dan menyebabkan error
-
-  # RFID & Bluetooth
-  #flutter_blue_plus: ^1.32.0
-  #permission_handler: ^11.3.1
-  #flutter_nfc_kit: ^3.2.0
 
   #fingerprint
   local_auth: ^2.1.7
 
   # Backend
-  supabase_flutter: ^1.0.0
   http: ^1.2.2
+  web_socket_channel: ^2.4.0
 
   # Utilities
-  #intl: ^0.20.2
   audioplayers: ^5.2.1
   connectivity_plus: ^5.0.2
   intl: ^0.18.0
+  supabase: ^2.10.6
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.14.3
 
 flutter:
   uses-material-design: true
-
   assets:
-    - assets/logo/
+    - assets/icon/
     - assets/models/
     - assets/sounds/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/logo.png"
+  adaptive_icon_background: "#2196F3"
+  adaptive_icon_foreground: "assets/icon/logo.png"

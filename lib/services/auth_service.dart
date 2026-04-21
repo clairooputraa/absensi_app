@@ -1,68 +1,93 @@
-import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../models/user_model.dart';
+import 'package:flutter/foundation.dart';
+import '../main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-class AuthService extends ChangeNotifier {
-  final SupabaseClient _supabase = Supabase.instance.client;
+class AuthService {
+  static const String _tokenKey = 'user_token';
+  static const String _userIdKey = 'user_id';
+  static const String _userRoleKey = 'user_role';
+  static const String _userNameKey = 'user_name';
 
-  UserModel? _currentUser;
-  bool _isLoading = false;
+  Future<bool> isLoggedIn() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(_tokenKey);
+    return token != null && token.isNotEmpty;
+  }
 
-  UserModel? get currentUser => _currentUser;
-  bool get isLoading => _isLoading;
+  Future<String?> getCurrentUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_userIdKey);
+  }
 
-  // Login
+  Future<String?> getCurrentUserRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_userRoleKey);
+  }
+
+  Future<String?> getCurrentUserName() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_userNameKey);
+  }
+
+  Future<void> saveSession({
+    required String userId,
+    required String userRole,
+    required String userName,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        _tokenKey, 'dummy_token_${DateTime.now().millisecondsSinceEpoch}');
+    await prefs.setString(_userIdKey, userId);
+    await prefs.setString(_userRoleKey, userRole);
+    await prefs.setString(_userNameKey, userName);
+  }
+
+  Future<void> signOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
+    await prefs.remove(_userIdKey);
+    await prefs.remove(_userRoleKey);
+    await prefs.remove(_userNameKey);
+  }
+
+  // LOGIN
   Future<Map<String, dynamic>> login(String email, String password) async {
-    _isLoading = true;
-    notifyListeners();
-
     try {
-      final response = await _supabase
+      final response = await supabaseClient
           .from('users')
           .select()
           .eq('email', email)
+          .eq('password', password)
           .maybeSingle();
 
-      if (response == null) {
-        _isLoading = false;
-        notifyListeners();
-        return {'success': false, 'message': 'Email tidak terdaftar'};
+      if (response != null) {
+        await saveSession(
+          userId: response['id'].toString(),
+          userRole: response['role'] ?? 'User',
+          userName: response['name'] ?? 'Unknown',
+        );
+        return {
+          'success': true,
+          'user': response,
+          'message': 'Login berhasil',
+        };
       }
-
-      if (response['password'] != password) {
-        _isLoading = false;
-        notifyListeners();
-        return {'success': false, 'message': 'Password salah'};
-      }
-
-      _currentUser = UserModel(
-        id: response['id'],
-        name: response['name'],
-        email: response['email'],
-        role: response['role'],
-        photoUrl: response['photo_url'],
-        kelas: response['kelas'],
-        nip: response['nip'],
-        phoneNumber: response['phone_number'],
-        address: response['address'],
-      );
-
-      _isLoading = false;
-      notifyListeners();
-
       return {
-        'success': true,
-        'message': 'Login berhasil',
-        'user': _currentUser
+        'success': false,
+        'user': null,
+        'message': 'Email atau password salah',
       };
     } catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      return {'success': false, 'message': 'Terjadi kesalahan: $e'};
+      debugPrint('Login error: $e');
+      return {
+        'success': false,
+        'user': null,
+        'message': 'Terjadi kesalahan: $e',
+      };
     }
   }
 
-  // Register
+  // REGISTER dengan parameter lengkap
   Future<Map<String, dynamic>> register({
     required String name,
     required String email,
@@ -73,69 +98,62 @@ class AuthService extends ChangeNotifier {
     String? nip,
     String? kelas,
   }) async {
-    _isLoading = true;
-    notifyListeners();
-
     try {
       // Cek email sudah terdaftar
-      final existingUser = await _supabase
+      final existing = await supabaseClient
           .from('users')
           .select()
           .eq('email', email)
           .maybeSingle();
 
-      if (existingUser != null) {
-        _isLoading = false;
-        notifyListeners();
-        return {'success': false, 'message': 'Email sudah terdaftar'};
+      if (existing != null) {
+        return {
+          'success': false,
+          'user': null,
+          'message': 'Email sudah terdaftar',
+        };
       }
 
-      // Insert user baru
-      final response = await _supabase
-          .from('users')
-          .insert({
-            'name': name,
-            'email': email,
-            'password': password,
-            'role': role,
-            'phone_number': phoneNumber,
-            'address': address,
-            'nip': nip,
-            'kelas': kelas,
-          })
-          .select()
-          .single();
+      // Data user baru
+      final Map<String, dynamic> userData = {
+        'name': name,
+        'email': email,
+        'password': password,
+        'role': role,
+        'is_active': true,
+        'created_at': DateTime.now().toIso8601String(),
+      };
 
-      _currentUser = UserModel(
-        id: response['id'],
-        name: response['name'],
-        email: response['email'],
-        role: response['role'],
-        photoUrl: response['photo_url'],
-        kelas: response['kelas'],
-        nip: response['nip'],
-        phoneNumber: response['phone_number'],
-        address: response['address'],
-      );
+      // Tambahkan field opsional jika ada
+      if (phoneNumber != null && phoneNumber.isNotEmpty) {
+        userData['phone_number'] = phoneNumber;
+      }
+      if (address != null && address.isNotEmpty) {
+        userData['address'] = address;
+      }
+      if (nip != null && nip.isNotEmpty && role == 'Petugas') {
+        userData['nip'] = nip;
+      }
+      if (kelas != null && kelas.isNotEmpty && role == 'User') {
+        userData['kelas'] = kelas;
+      }
 
-      _isLoading = false;
-      notifyListeners();
+      // Insert user
+      final response =
+          await supabaseClient.from('users').insert(userData).select().single();
 
       return {
         'success': true,
+        'user': response,
         'message': 'Registrasi berhasil',
-        'user': _currentUser
       };
     } catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      return {'success': false, 'message': 'Registrasi gagal: $e'};
+      debugPrint('Register error: $e');
+      return {
+        'success': false,
+        'user': null,
+        'message': 'Terjadi kesalahan: $e',
+      };
     }
-  }
-
-  // Logout
-  Future<void> logout() async {
-    _currentUser = null;
-    notifyListeners();
   }
 }

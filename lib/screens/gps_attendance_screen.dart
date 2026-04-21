@@ -19,14 +19,15 @@ class _GPSAttendanceScreenState extends State<GPSAttendanceScreen> {
   bool _hasPermission = false;
   String _status = 'Mengambil izin lokasi...';
   String? _currentAddress;
+  String? _shortAddress;
   double? _latitude;
   double? _longitude;
+  double? _accuracy;
 
-  // Koordinat kantor (GANTI dengan koordinat kantor Anda yang sebenarnya)
-  // Contoh: SMKN 8 Malang
-  final double _officeLat = -7.9822; // Ganti dengan latitude kantor Anda
-  final double _officeLon = 112.6304; // Ganti dengan longitude kantor Anda
-  final double _radius = 100; // Radius 100 meter
+  // Koordinat kantor
+  final double _officeLat = -7.9822;
+  final double _officeLon = 112.6304;
+  final double _radius = 100;
 
   @override
   void initState() {
@@ -61,7 +62,7 @@ class _GPSAttendanceScreenState extends State<GPSAttendanceScreen> {
 
     setState(() {
       _isLoading = true;
-      _status = 'Mendapatkan lokasi...';
+      _status = 'Mendapatkan lokasi... Pastikan GPS aktif dan di luar ruangan';
     });
 
     try {
@@ -71,22 +72,40 @@ class _GPSAttendanceScreenState extends State<GPSAttendanceScreen> {
         setState(() {
           _latitude = position.latitude;
           _longitude = position.longitude;
+          _accuracy = position.accuracy;
         });
 
-        final address = await _gpsService.getAddressFromLatLng(
+        final fullAddress = await _gpsService.getAddressFromLatLng(
+          position.latitude,
+          position.longitude,
+        );
+        final shortAddr = await _gpsService.getShortAddress(
           position.latitude,
           position.longitude,
         );
 
         setState(() {
-          _currentAddress = address;
-          _status = 'Lokasi ditemukan';
+          _currentAddress = fullAddress;
+          _shortAddress = shortAddr;
         });
+
+        if (position.accuracy > 50) {
+          setState(() {
+            _status =
+                '⚠️ Akurasi GPS rendah (${position.accuracy.toStringAsFixed(0)} meter). Coba ke luar ruangan.';
+          });
+        } else {
+          setState(() {
+            _status =
+                '✅ Lokasi ditemukan (akurasi: ${position.accuracy.toStringAsFixed(0)} meter)';
+          });
+        }
       } else {
         setState(() {
           _status = 'Gagal mendapatkan lokasi';
         });
-        _showErrorDialog('Gagal mendapatkan lokasi. Pastikan GPS aktif.');
+        _showErrorDialog(
+            'Gagal mendapatkan lokasi. Pastikan GPS aktif dan Anda di luar ruangan.');
       }
     } catch (e) {
       setState(() {
@@ -100,9 +119,20 @@ class _GPSAttendanceScreenState extends State<GPSAttendanceScreen> {
     }
   }
 
+  Future<void> _refreshLocation() async {
+    await _getCurrentLocation();
+  }
+
   Future<void> _takeAttendance() async {
     if (_latitude == null || _longitude == null) {
       _showErrorDialog('Lokasi belum didapatkan');
+      return;
+    }
+
+    if (_accuracy != null && _accuracy! > 50) {
+      _showErrorDialog(
+          'Akurasi GPS terlalu rendah (${_accuracy!.toStringAsFixed(0)} meter).\n'
+          'Pergi ke luar ruangan dan refresh lokasi.');
       return;
     }
 
@@ -112,7 +142,6 @@ class _GPSAttendanceScreenState extends State<GPSAttendanceScreen> {
     });
 
     try {
-      // Cek apakah dalam radius kantor
       bool isInOffice = _gpsService.isWithinRadius(
         _latitude!,
         _longitude!,
@@ -173,6 +202,9 @@ class _GPSAttendanceScreenState extends State<GPSAttendanceScreen> {
   }
 
   void _showSuccessDialog() {
+    double distance = _gpsService.calculateDistance(
+        _latitude!, _longitude!, _officeLat, _officeLon);
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -181,18 +213,41 @@ class _GPSAttendanceScreenState extends State<GPSAttendanceScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Absensi GPS Berhasil!'),
-            const SizedBox(height: 8),
-            if (_currentAddress != null)
-              Text(
-                _currentAddress!,
-                style: const TextStyle(fontSize: 12),
-                textAlign: TextAlign.center,
+            const Text('✅ Absensi GPS Berhasil!'),
+            const SizedBox(height: 12),
+            if (_shortAddress != null)
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    const Text('📍 Lokasi Absen',
+                        style: TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Text(_shortAddress!,
+                        style: const TextStyle(fontSize: 12),
+                        textAlign: TextAlign.center),
+                  ],
+                ),
               ),
-            const SizedBox(height: 4),
-            Text(
-              'Jarak ke kantor: ${_gpsService.calculateDistance(_latitude!, _longitude!, _officeLat, _officeLon).toStringAsFixed(0)} meter',
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('📏 Jarak: ${distance.toStringAsFixed(0)} m',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                if (_accuracy != null)
+                  Text(
+                    '🎯 Akurasi: ${_accuracy!.toStringAsFixed(0)} m',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: _accuracy! > 50 ? Colors.red : Colors.green),
+                  ),
+              ],
             ),
           ],
         ),
@@ -200,7 +255,7 @@ class _GPSAttendanceScreenState extends State<GPSAttendanceScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              Navigator.pop(context); // Kembali ke home
+              Navigator.pop(context);
             },
             child: const Text('OK'),
           ),
@@ -231,6 +286,15 @@ class _GPSAttendanceScreenState extends State<GPSAttendanceScreen> {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final isDark = themeProvider.isDarkMode;
 
+    // Hitung jarak dan cek jangkauan
+    double distanceToOffice = 0;
+    bool isInRange = false;
+    if (_latitude != null && _longitude != null) {
+      distanceToOffice = _gpsService.calculateDistance(
+          _latitude!, _longitude!, _officeLat, _officeLon);
+      isInRange = distanceToOffice <= _radius;
+    }
+
     return Scaffold(
       backgroundColor:
           isDark ? const Color(0xFF121212) : const Color(0xFFF8F9FF),
@@ -243,159 +307,293 @@ class _GPSAttendanceScreenState extends State<GPSAttendanceScreen> {
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshLocation,
+            tooltip: 'Refresh Lokasi',
+          ),
+        ],
       ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Icon GPS
-              TweenAnimationBuilder(
-                tween: Tween<double>(begin: 0, end: 1),
-                duration: const Duration(milliseconds: 500),
-                builder: (context, double value, child) {
-                  return Transform.scale(
-                    scale: value,
-                    child: Container(
-                      padding: const EdgeInsets.all(32),
-                      decoration: BoxDecoration(
-                        color: _hasPermission
-                            ? Colors.green.withOpacity(0.1)
-                            : Colors.orange.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.location_on,
-                        size: 80,
-                        color: _hasPermission ? Colors.green : Colors.orange,
-                      ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 32),
-
-              // Status
-              Text(
-                _status,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                  color: isDark ? Colors.white70 : Colors.black87,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-
-              // Lokasi
-              if (_latitude != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                  ),
-                  child: Column(
-                    children: [
-                      const Text(
-                        '📍 Lokasi Anda',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      if (_currentAddress != null)
-                        Text(
-                          _currentAddress!,
-                          style: const TextStyle(fontSize: 12),
-                          textAlign: TextAlign.center,
-                        ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '${_latitude!.toStringAsFixed(6)}, ${_longitude!.toStringAsFixed(6)}',
-                        style: const TextStyle(
-                            fontSize: 11, fontFamily: 'monospace'),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+      // 🔥 TAMBAHKAN SingleChildScrollView UNTUK MENCEGAH OVERFLOW
+      body: SingleChildScrollView(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TweenAnimationBuilder(
+                  tween: Tween<double>(begin: 0, end: 1),
+                  duration: const Duration(milliseconds: 500),
+                  builder: (context, double value, child) {
+                    return Transform.scale(
+                      scale: value,
+                      child: Container(
+                        padding: const EdgeInsets.all(32),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
+                          color: _hasPermission
+                              ? Colors.green.withOpacity(0.1)
+                              : Colors.orange.withOpacity(0.1),
+                          shape: BoxShape.circle,
                         ),
-                        child: Text(
-                          'Jarak ke kantor: ${_gpsService.calculateDistance(_latitude!, _longitude!, _officeLat, _officeLon).toStringAsFixed(0)} meter',
-                          style:
-                              const TextStyle(fontSize: 11, color: Colors.blue),
+                        child: Icon(
+                          Icons.location_on,
+                          size: 80,
+                          color: _hasPermission ? Colors.green : Colors.orange,
                         ),
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
+                const SizedBox(height: 32),
+                Text(
+                  _status,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                    color: isDark ? Colors.white70 : Colors.black87,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                if (_latitude != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.location_on,
+                                color: Colors.blue, size: 20),
+                            SizedBox(width: 8),
+                            Text('📍 Detail Lokasi Anda',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(12)),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Alamat Lengkap',
+                                  style: TextStyle(
+                                      fontSize: 11, color: Colors.grey)),
+                              const SizedBox(height: 4),
+                              Text(_currentAddress ?? 'Mengambil alamat...',
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (_shortAddress != null)
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                                color: Colors.green.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(12)),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Lokasi (Singkat)',
+                                    style: TextStyle(
+                                        fontSize: 11, color: Colors.grey)),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.place,
+                                        size: 14, color: Colors.green),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                        child: Text(_shortAddress!,
+                                            style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w500))),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                    color: Colors.grey.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12)),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Latitude',
+                                        style: TextStyle(
+                                            fontSize: 10, color: Colors.grey)),
+                                    Text(_latitude!.toStringAsFixed(6),
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                    color: Colors.grey.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12)),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Longitude',
+                                        style: TextStyle(
+                                            fontSize: 10, color: Colors.grey)),
+                                    Text(_longitude!.toStringAsFixed(6),
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20)),
+                              child: Text(
+                                  '📏 Jarak: ${distanceToOffice.toStringAsFixed(0)} m',
+                                  style: const TextStyle(
+                                      fontSize: 12, color: Colors.blue)),
+                            ),
+                            if (_accuracy != null)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: _accuracy! > 50
+                                      ? Colors.red.withOpacity(0.1)
+                                      : Colors.green.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  '🎯 Akurasi: ${_accuracy!.toStringAsFixed(0)} m',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: _accuracy! > 50
+                                          ? Colors.red
+                                          : Colors.green),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10)),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.info,
+                                  size: 16, color: Colors.orange),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Radius kantor: $_radius meter',
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.orange),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: isInRange
+                                      ? Colors.green.withOpacity(0.2)
+                                      : Colors.red.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  isInRange
+                                      ? '✅ Dalam Jangkauan'
+                                      : '❌ Di Luar Jangkauan',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      color:
+                                          isInRange ? Colors.green : Colors.red,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 32),
+                if (_latitude == null)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _getCurrentLocation,
+                      icon: Icon(_isLoading
+                          ? Icons.hourglass_empty
+                          : Icons.my_location),
+                      label: Text(_isLoading
+                          ? 'Mendapatkan lokasi...'
+                          : 'Dapatkan Lokasi'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2196F3),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                if (_latitude != null)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _takeAttendance,
+                      icon: Icon(_isLoading
+                          ? Icons.hourglass_empty
+                          : Icons.check_circle),
+                      label:
+                          Text(_isLoading ? 'Memproses...' : 'Absen Sekarang'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
               ],
-
-              const SizedBox(height: 32),
-
-              // Tombol Dapatkan Lokasi
-              if (_latitude == null)
-                SizedBox(
-                  width: double.infinity,
-                  height: 54,
-                  child: ElevatedButton.icon(
-                    onPressed: _isLoading ? null : _getCurrentLocation,
-                    icon: Icon(
-                        _isLoading ? Icons.hourglass_empty : Icons.my_location),
-                    label: Text(
-                      _isLoading ? 'Mendapatkan lokasi...' : 'Dapatkan Lokasi',
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2196F3),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-
-              const SizedBox(height: 16),
-
-              // Tombol Absen
-              if (_latitude != null)
-                SizedBox(
-                  width: double.infinity,
-                  height: 54,
-                  child: ElevatedButton.icon(
-                    onPressed: _isLoading ? null : _takeAttendance,
-                    icon: Icon(_isLoading
-                        ? Icons.hourglass_empty
-                        : Icons.check_circle),
-                    label: Text(
-                      _isLoading ? 'Memproses...' : 'Absen Sekarang',
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-
-              // Tombol Refresh
-              if (_latitude != null)
-                TextButton.icon(
-                  onPressed: _getCurrentLocation,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Refresh Lokasi'),
-                ),
-            ],
+            ),
           ),
         ),
       ),

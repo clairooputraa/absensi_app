@@ -467,7 +467,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         const SizedBox(height: 60),
                         ScaleTransition(
                           scale: _scaleController,
-                          child: _buildProfileAvatar(), // 🔥 GANTI DENGAN INI
+                          child: _buildProfileAvatar(),
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -1038,6 +1038,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                         TextStyle(fontWeight: FontWeight.w500)),
                                 subtitle: const Text('Indonesian'),
                                 value: 'Bahasa Indonesia',
+                                groupValue: _selectedLanguage,
                                 onChanged: (value) => setState(
                                     () => _selectedLanguage = value.toString()),
                                 activeColor: const Color(0xFF2196F3),
@@ -1048,6 +1049,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                         TextStyle(fontWeight: FontWeight.w500)),
                                 subtitle: const Text('International'),
                                 value: 'English',
+                                groupValue: _selectedLanguage,
                                 onChanged: (value) => setState(
                                     () => _selectedLanguage = value.toString()),
                                 activeColor: const Color(0xFF2196F3),
@@ -1205,6 +1207,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     return _buildInfoRow(icon, label, value, isDark);
   }
 
+  // 🔥 BUILD PRESENSI ITEM (DIPERBAIKI - ganti activeThumbColor dengan activeColor)
   Widget _buildPresensiItem({
     required IconData icon,
     required String title,
@@ -1230,7 +1233,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeThumbColor: const Color(0xFF2196F3),
+        activeColor: const Color(0xFF2196F3),  // 🔥 GANTI activeThumbColor menjadi activeColor
         activeTrackColor: const Color(0xFF2196F3).withValues(alpha: 0.3),
       ),
     );

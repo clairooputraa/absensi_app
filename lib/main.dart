@@ -1,37 +1,54 @@
-import 'package:absensi_app/screens/attendance_history_screen.dart';
-import 'package:absensi_app/screens/manual_attendance_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide Provider;
+import 'package:supabase/supabase.dart' as supabase;
 import 'providers/theme_provider.dart';
 import 'providers/role_provider.dart';
 import 'providers/attendance_provider.dart';
 import 'providers/user_provider.dart';
+import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/members_screen.dart';
 import 'screens/report_screen.dart';
 import 'screens/profile_screen.dart';
-import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/attendance_method_screen.dart';
+import 'screens/attendance_history_screen.dart';
+import 'screens/manual_attendance_screen.dart';
 
 const String SUPABASE_URL = 'https://dxwkenwmkumhzdasnltu.supabase.co';
 const String SUPABASE_ANON_KEY =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2tlbndta3VtaHpkYXNubHR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwMzUwMDYsImV4cCI6MjA5MTYxMTAwNn0.1-sQaWxAUg0S--Hxhi9_S5sDr-pg171kqDus3z8NxGk';
 
+// Global SupabaseClient instance
+late supabase.SupabaseClient supabaseClient;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Supabase.initialize(
-    url: SUPABASE_URL,
-    anonKey: SUPABASE_ANON_KEY,
-  );
+  // Initialize SupabaseClient
+  supabaseClient = supabase.SupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final attendanceProvider =
+          Provider.of<AttendanceProvider>(context, listen: false);
+      attendanceProvider.initOffline();
+      attendanceProvider.loadSettings();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -119,11 +136,6 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  // 🔥 FUNGSI INI TIDAK DIPERLUKAN LAGI KARENA FAB DI HAPUS
-  // void _openAttendance() {
-  //   Navigator.pushNamed(context, '/attendance');
-  // }
-
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
@@ -173,14 +185,6 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ),
       ),
-      // 🔥🔥🔥 HAPUS FAB DI SINI! 🔥🔥🔥
-      // floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      // floatingActionButton: FloatingActionButton(
-      //   onPressed: _openAttendance,
-      //   backgroundColor: const Color(0xFF2196F3),
-      //   elevation: 4,
-      //   child: const Icon(Icons.camera_alt, size: 28, color: Colors.white),
-      // ),
     );
   }
 

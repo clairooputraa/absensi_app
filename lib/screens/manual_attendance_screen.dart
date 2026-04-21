@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/attendance_provider.dart';
-
 import '../helpers/sound_helper.dart';
 
 class ManualAttendanceScreen extends StatefulWidget {
@@ -248,9 +247,9 @@ class _ManualAttendanceScreenState extends State<ManualAttendanceScreen> {
 
               const SizedBox(height: 16),
 
-              // Pilih Metode
+              // 🔥 Pilih Metode - Ganti initialValue dengan value
               DropdownButtonFormField<String>(
-                initialValue: _selectedMethod,
+                value: _selectedMethod,  // 🔥 GANTI initialValue dengan value
                 decoration: InputDecoration(
                   labelText: 'Metode Absensi',
                   prefixIcon: const Icon(Icons.qr_code_scanner),
@@ -276,9 +275,9 @@ class _ManualAttendanceScreenState extends State<ManualAttendanceScreen> {
 
               const SizedBox(height: 16),
 
-              // Pilih Status
+              // 🔥 Pilih Status - Ganti initialValue dengan value
               DropdownButtonFormField<String>(
-                initialValue: _selectedStatus,
+                value: _selectedStatus,  // 🔥 GANTI initialValue dengan value
                 decoration: InputDecoration(
                   labelText: 'Status',
                   prefixIcon: const Icon(Icons.assignment_turned_in),
