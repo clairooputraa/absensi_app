@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://cdn-icons-png.flaticon.com/512/1903/1903656.png" width="80" alt="Logo"/>
+  <img src="https://i.pinimg.com/1200x/11/42/3a/11423a4a29c49b9ff9d293033bd5704a.jpg" width="80" alt="Logo"/>
   
   # 📱 Absensi App
   
